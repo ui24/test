@@ -5,7 +5,7 @@ echo "🚀 Updating system..."
 apt update && apt upgrade -y
 
 echo "📦 Installing dependencies..."
-apt install -y python3 python3-venv python3-pip git nginx curl wget
+apt install -y python3 python3-venv python3-pip git curl wget
 
 # ---------- Add Swap (for low RAM VPS) ----------
 if ! swapon --show | grep -q '/swapfile'; then
@@ -31,7 +31,7 @@ fi
 source venv/bin/activate
 
 # ---------- Install Python Packages ----------
-echo "📥 Installing Python packages (force reinstall, CPU version)..."
+echo "📥 Installing Python packages (CPU version)..."
 pip install --upgrade pip
 pip install --force-reinstall torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
 pip install --force-reinstall fastapi uvicorn pillow opencv-python rembg realesrgan
@@ -60,7 +60,7 @@ async def process_image(file: UploadFile, enhance: bool = True, remove_bg: bool 
     with open(input_path, "wb") as f:
         f.write(await file.read())
 
-    # Enhance with Real-ESRGAN (CPU)
+    # Enhance with Real-ESRGAN
     if enhance:
         subprocess.run(["realesrgan-ncnn-vulkan", "-i", input_path, "-o", output_path, "-s", "2"], check=True)
     else:
@@ -87,7 +87,7 @@ async def download(file_name: str):
     return FileResponse(path, media_type="image/png", filename=file_name)
 EOF
 
-# ---------- Systemd Service ----------
+# ---------- Systemd Service (run on port 8080) ----------
 echo "⚙️ Creating Systemd service..."
 cat > /etc/systemd/system/photoenhancer.service << 'EOF'
 [Unit]
@@ -97,7 +97,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/opt/photoenhancer
-ExecStart=/opt/photoenhancer/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
+ExecStart=/opt/photoenhancer/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080
 Restart=always
 
 [Install]
@@ -107,32 +107,6 @@ EOF
 systemctl daemon-reload
 systemctl enable photoenhancer
 systemctl restart photoenhancer
-
-# ---------- Nginx ----------
-echo "🌐 Setting up Nginx..."
-cat > /etc/nginx/sites-available/photoenhancer << 'EOF'
-server {
-    listen 80;
-    server_name _;
-
-    location / {
-        root /opt/photoenhancer/frontend;
-        index index.html;
-    }
-
-    location /process/ {
-        proxy_pass http://127.0.0.1:8000/process/;
-    }
-
-    location /download/ {
-        proxy_pass http://127.0.0.1:8000/download/;
-    }
-}
-EOF
-
-ln -sf /etc/nginx/sites-available/photoenhancer /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl restart nginx
 
 # ---------- Frontend ----------
 echo "🎨 Creating frontend..."
@@ -181,4 +155,4 @@ cat > /opt/photoenhancer/frontend/index.html << 'EOF'
 </html>
 EOF
 
-echo "✅ Setup complete! Visit http://YOUR_SERVER_IP"
+echo "✅ Setup complete! Visit http://YOUR_SERVER_IP:8080"
